@@ -1,0 +1,77 @@
+plugins {
+    id "java"
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        url = uri("https://repo.spring.io/milestone")
+    }
+}
+
+def bootRepo = providers.gradleProperty("bootRepo").orNull
+if (bootRepo == null) {
+    throw new GradleException("Supply -PbootRepo=<spring-boot repository>")
+}
+
+def bootProperties = new Properties()
+file("${bootRepo}/gradle.properties").withInputStream {
+    bootProperties.load(it)
+}
+
+def bootVersion = bootProperties.getProperty("version")
+def springFrameworkVersion = bootProperties.getProperty("springFrameworkVersion")
+
+def bootJar = file(
+    "${bootRepo}/core/spring-boot/build/libs/spring-boot-${bootVersion}.jar"
+)
+
+def autoConfigureJar = file(
+    "${bootRepo}/core/spring-boot-autoconfigure/build/libs/spring-boot-autoconfigure-${bootVersion}.jar"
+)
+
+if (!bootJar.exists()) {
+    throw new GradleException("Spring Boot jar does not exist: ${bootJar}")
+}
+
+if (!autoConfigureJar.exists()) {
+    throw new GradleException(
+        "Spring Boot autoconfigure jar does not exist: ${autoConfigureJar}"
+    )
+}
+
+dependencies {
+    implementation files(
+        bootJar,
+        autoConfigureJar
+    )
+
+    implementation "org.springframework:spring-core:${springFrameworkVersion}"
+    implementation "org.jspecify:jspecify:1.0.0"
+
+    implementation "org.openjdk.jmh:jmh-core:1.37"
+    annotationProcessor "org.openjdk.jmh:jmh-generator-annprocess:1.37"
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}
+
+tasks.register("jmh", JavaExec) {
+    dependsOn classes
+
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "org.openjdk.jmh.Main"
+
+    def rawArgs = providers.gradleProperty("jmhArgs").orElse("").get()
+
+    if (!rawArgs.isBlank()) {
+        args rawArgs.split(/\s+/)
+    }
+}

@@ -1,0 +1,6 @@
+rootProject.name = "spring-boot-auto-configuration-sorter-app-benchmark"
+
+include("normal")
+include("medium")
+include("large")
+include("ordered")

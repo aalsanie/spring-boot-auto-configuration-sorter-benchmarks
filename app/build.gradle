@@ -1,0 +1,167 @@
+plugins {
+    id "base"
+}
+
+def bootRepoPath = providers.gradleProperty("bootRepo").orNull
+
+if (bootRepoPath == null) {
+    throw new GradleException(
+        "Supply -PbootRepo=<spring-boot repository>"
+    )
+}
+
+def bootRepoDir = file(bootRepoPath)
+
+def bootProperties = new Properties()
+
+file("${bootRepoDir}/gradle.properties").withInputStream {
+    bootProperties.load(it)
+}
+
+ext {
+    bootVersion = bootProperties.getProperty("version")
+    springFrameworkVersion =
+        bootProperties.getProperty("springFrameworkVersion")
+
+    bootJar = file(
+        "${bootRepoDir}/core/spring-boot/build/libs/" +
+        "spring-boot-${bootVersion}.jar"
+    )
+
+    autoConfigureJar = file(
+        "${bootRepoDir}/core/spring-boot-autoconfigure/build/libs/" +
+        "spring-boot-autoconfigure-${bootVersion}.jar"
+    )
+
+    processorJar = file(
+        "${bootRepoDir}/core/spring-boot-autoconfigure-processor/build/libs/" +
+        "spring-boot-autoconfigure-processor-${bootVersion}.jar"
+    )
+}
+
+[
+    rootProject.ext.bootJar,
+    rootProject.ext.autoConfigureJar,
+    rootProject.ext.processorJar
+].each { jar ->
+
+    if (!jar.exists()) {
+        throw new GradleException(
+            "Required Spring Boot jar does not exist: ${jar}"
+        )
+    }
+}
+
+subprojects {
+
+    apply plugin: "java"
+
+    repositories {
+        mavenCentral()
+
+        maven {
+            url = uri("https://repo.spring.io/milestone")
+        }
+    }
+
+    dependencies {
+        implementation files(
+            rootProject.ext.bootJar,
+            rootProject.ext.autoConfigureJar
+        )
+
+        implementation(
+            "org.springframework:spring-context:" +
+            rootProject.ext.springFrameworkVersion
+        )
+
+        implementation "org.jspecify:jspecify:1.0.0"
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    tasks.register("runInfo", JavaExec) {
+        dependsOn classes
+
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = "bench.StartupBenchmark"
+
+        args "info"
+
+        jvmArgs(
+            "-Dorg.springframework.boot.logging.LoggingSystem=none",
+            "-Dbench.scenario=${project.name}"
+        )
+    }
+
+    tasks.register("runSingle", JavaExec) {
+        dependsOn classes
+
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = "bench.StartupBenchmark"
+
+        args "single"
+
+        jvmArgs(
+            "-Dorg.springframework.boot.logging.LoggingSystem=none",
+            "-Dbench.scenario=${project.name}"
+        )
+    }
+
+    tasks.register("runRepeated", JavaExec) {
+        dependsOn classes
+
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = "bench.StartupBenchmark"
+
+        def warmups =
+            providers.gradleProperty("warmups")
+                .orElse("5")
+
+        def iterations =
+            providers.gradleProperty("iterations")
+                .orElse("20")
+
+        args(
+            "repeat",
+            warmups.get(),
+            iterations.get()
+        )
+
+        jvmArgs(
+            "-Dorg.springframework.boot.logging.LoggingSystem=none",
+            "-Dbench.scenario=${project.name}"
+        )
+    }
+
+    tasks.register("printRuntimeClasspath") {
+        dependsOn classes
+
+        doLast {
+            println(
+                sourceSets.main.runtimeClasspath.asPath
+            )
+        }
+    }
+}
+
+configure([
+    project(":medium"),
+    project(":large")
+]) {
+
+    dependencies {
+        annotationProcessor files(
+            rootProject.ext.processorJar
+        )
+    }
+}
+
